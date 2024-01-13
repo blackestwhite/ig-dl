@@ -6,6 +6,9 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"strings"
+
+	"golang.org/x/net/html"
 )
 
 const format = "https://instagram.com/p/%s/embed/captioned"
@@ -50,7 +53,13 @@ func main() {
 		log.Fatal(err)
 	}
 
-	fmt.Println("Response Body:", string(body))
+	doc, err := html.Parse(strings.NewReader(string(body)))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	scriptContent := findScriptTag(doc)
+	fmt.Println("Script Content:", scriptContent)
 }
 
 func extractPostID(url string) (string, error) {
@@ -65,4 +74,22 @@ func extractPostID(url string) (string, error) {
 	postID := matches[1]
 
 	return postID, nil
+}
+
+func findScriptTag(n *html.Node) string {
+	if n.Type == html.ElementNode && n.Data == "script" {
+		// Check if the script tag contains the desired content (you may need to adjust this condition)
+		if strings.Contains(n.FirstChild.Data, "your_desired_content_marker") {
+			return n.FirstChild.Data
+		}
+	}
+
+	// Recursively search for script tag
+	for c := n.FirstChild; c != nil; c = c.NextSibling {
+		if result := findScriptTag(c); result != "" {
+			return result
+		}
+	}
+
+	return ""
 }
