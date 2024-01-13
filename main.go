@@ -7,8 +7,6 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
-
-	"golang.org/x/net/html"
 )
 
 const format = "https://instagram.com/p/%s/embed/captioned"
@@ -20,12 +18,14 @@ func main() {
 	fmt.Println("enter url:")
 	_, err := fmt.Scanln(&input)
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
+		return
 	}
 
 	postid, err := extractPostID(input)
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
+		return
 	}
 
 	formatted := fmt.Sprintf(format, postid)
@@ -34,32 +34,39 @@ func main() {
 
 	req, err := http.NewRequest("GET", formatted, nil)
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
+		return
 	}
 
 	res, err := client.Do(req)
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
+		return
 	}
 
 	if res.StatusCode != http.StatusOK {
-		log.Fatalf("HTTP request failed with status: %s", res.Status)
+		log.Printf("HTTP request failed with status: %s", res.Status)
 	}
 
 	defer res.Body.Close()
 
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
+		return
 	}
 
-	doc, err := html.Parse(strings.NewReader(string(body)))
+	doc := string(body)
+
+	scriptContent := findLastScriptTagInBody(doc)
+
+	videoURL, err := extractVideoURL(scriptContent)
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
+		return
 	}
 
-	scriptContent := findScriptTag(doc)
-	fmt.Println("Script Content:", scriptContent)
+	fmt.Println("Video URL:", videoURL)
 }
 
 func extractPostID(url string) (string, error) {
@@ -76,20 +83,27 @@ func extractPostID(url string) (string, error) {
 	return postID, nil
 }
 
-func findScriptTag(n *html.Node) string {
-	if n.Type == html.ElementNode && n.Data == "script" {
-		// Check if the script tag contains the desired content (you may need to adjust this condition)
-		if strings.Contains(n.FirstChild.Data, "your_desired_content_marker") {
-			return n.FirstChild.Data
-		}
-	}
+func findLastScriptTagInBody(body string) string {
+	// Use a regex to find the last script tag in the body
+	re := regexp.MustCompile(`<script[^>]*>(.*?)</script>`)
+	matches := re.FindAllStringSubmatch(body, -1)
 
-	// Recursively search for script tag
-	for c := n.FirstChild; c != nil; c = c.NextSibling {
-		if result := findScriptTag(c); result != "" {
-			return result
-		}
+	if len(matches) > 0 {
+		return matches[len(matches)-1][1]
 	}
 
 	return ""
+}
+
+func extractVideoURL(scriptContent string) (string, error) {
+	re := regexp.MustCompile(`\\"video_url\\":\\"(.*?)\\",`)
+	matches := re.FindStringSubmatch(scriptContent)
+
+	if len(matches) >= 2 {
+		// Replace escaped slashes with regular slashes
+		url := strings.Replace(matches[1], `\\\/`, `/`, -1)
+		return url, nil
+	}
+
+	return "", fmt.Errorf("video_url not found in the script content")
 }
